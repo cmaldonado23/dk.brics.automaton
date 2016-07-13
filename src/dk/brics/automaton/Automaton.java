@@ -972,6 +972,17 @@ public class Automaton implements Serializable, Cloneable {
 		a.minimize();
 		return a;
 	}
+
+	/**
+	 * Returns the automaton being given as argument minimized for widening
+	 */
+	public void minimizeWid() {
+		MinimizationOperations.minimizeWid(this);
+	}
+	public static Automaton minimizeWid(Automaton a) {
+		a.minimizeWid();
+		return a;
+	}
 	
 	/**
 	 * See {@link SpecialOperations#overlap(Automaton, Automaton)}.

@@ -29,12 +29,9 @@
 
 package dk.brics.automaton;
 
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Special automata operations.
@@ -599,4 +596,315 @@ final public class SpecialOperations {
 		map.put(' ', ws);
 		return a.subst(map);
 	}
+
+	static Marker mark[][];
+
+	public static Set<Set<State>> cond_1(Automaton a, Automaton b) {
+		mark = new Marker[a.getNumberOfStates()][b.getNumberOfStates()];
+
+		Set<Set<State>> classes = new HashSet<>();
+		for(State sa : a.getStates()) {
+			for(State sb : b.getStates()) {
+				if(cond_1_h(sa, sb).equals(Marker.True)) {
+					Set<State> class_e = new HashSet<>();
+					class_e.add(sa);
+					class_e.add(sb);
+					classes.add(class_e);
+				}
+			}
+		}
+		return classes;
+	}
+
+	private enum Marker {False, True, Pending}
+
+	public static Marker cond_1_h(State sa, State sb) {
+		if (mark[sa.number][sb.number] != null) {
+			if (mark[sa.number][sb.number].equals(Marker.Pending)) {
+				return mark[sa.number][sb.number] = Marker.True;
+			}
+			return mark[sa.number][sb.number];
+		}
+
+		if (sa.accept != sb.accept) {
+			return (mark[sa.number][sb.number] = Marker.False);
+		}
+		if (sa.getTransitions().size() != sb.getTransitions().size()) {
+			return (mark[sa.number][sb.number] = Marker.False);
+		}
+		if (sa.getTransitions().size() == 0 && sb.getTransitions().size() == 0) {
+			return (mark[sa.number][sb.number] = Marker.True);
+		}
+
+		for (Transition ta : sa.getTransitions()) {
+			boolean flag = false;
+			for (Transition tb : sb.getTransitions()) {
+				if (ta.getMax() == tb.getMax() && ta.getMin() == tb.getMin()) {
+					mark[sa.number][sb.number] = Marker.Pending;
+					if (cond_1_h(ta.to, tb.to).equals(Marker.True)) {
+						flag = true;
+						break;
+					}
+				} else {
+					return mark[sa.number][sb.number] = Marker.False;
+				}
+			}
+			if (!flag) {
+				return mark[sa.number][sb.number] = Marker.False;
+			}
+		}
+		return mark[sa.number][sb.number] = Marker.True;
+	}
+
+    // Condition 1: L(a,q) = L(a',q')
+    //      Represented by Union and Minimization
+    // Condition 2: \exists w s.t. \delta(q0,w) = q and \delta(q'0,w) = q'
+    //      Represented by Intersection
+	public static Automaton widen(Automaton a1, Automaton a2) {
+		Automaton r = new Automaton();
+		a1.minimize();
+		a2.minimize();
+
+        if (a1.equals(a2)) {
+            return a1.clone();
+        }
+        a1.expandSingleton();
+        a2.expandSingleton();
+
+		// debug
+//		System.out.println(a2);
+		//
+
+		Automaton a2_copy = a2;
+
+		for(State s : a2_copy.getStates()) {
+			s.s_number = Integer.toString(s.number) + "'";
+		}
+
+        // Condition 2
+        Automaton c = a1.intersection(a2_copy);
+        Set<StatePair> equivalentPairs = traverseCollectingSources(c);
+
+        // Combine pairs into classes
+        LinkedList<Set<State>> classes;
+        classes = equivalentPairs.stream().map(pair -> {
+            Set<State> tuple = new HashSet<>();
+            tuple.add(pair.s1);
+            tuple.add(pair.s2);
+            return tuple;
+            }).collect(LinkedList::new,LinkedList::add, LinkedList::addAll);
+
+        // Condition 1
+        classes.addAll(cond_1(a1, a2_copy));
+
+        // Add singletons
+        Set<State> singletons = a1.getStates();
+        singletons.addAll(a2.getStates());
+        classes.addAll(singletons.stream()
+                .map(state -> {
+                    Set<State> singleton = new HashSet<>();
+                    singleton.add(state);
+                    return singleton;
+                }).collect(Collectors.toList()));
+
+        Set<Set<State>> finalClasses = new HashSet<>();
+        while(!classes.isEmpty()) {
+            Set<State> current = classes.removeFirst();
+            if(current.isEmpty())
+                continue;
+            boolean changed;
+            do {
+                changed = false;
+                classes.removeIf(states -> states.isEmpty());
+                for (Set<State> k : classes) {
+                    if (!Collections.disjoint(k, current)) {
+                        current.addAll(k);
+                        k.clear();
+                        changed = true;
+                    }
+                }
+            } while (changed);
+            finalClasses.add(current);
+        }
+
+        // Map classes to EquivClassStates
+		Map<Set<State>, EquivClassState> eqClasses = new HashMap<>();
+		int i = 0;
+		for(Set<State> clas : finalClasses) {
+			eqClasses.put(clas, new EquivClassState(clas, i++));
+		}
+
+		// Use classes to create new DFA
+        LinkedList<EquivClassState> worklist = new LinkedList<>();
+        r.initial = getContainingClass(a1.initial, eqClasses);
+        worklist.add((EquivClassState)r.initial);
+        while (worklist.size() > 0) {
+			EquivClassState cl = worklist.removeFirst();
+			HashSet<Transition> transitions = cl.containingStates.stream()
+                    .map(state -> state.transitions)
+                    .flatMap(t -> t.stream())
+                    .collect(HashSet<Transition>::new,
+                            (p, e)  -> squashTransitions(p,e,eqClasses),
+							(p, p2) -> squashTransitions(p,p2,eqClasses));
+			cl.transitions = transitions;
+            transitions.forEach(t ->
+            {
+                if(!(t.to instanceof EquivClassState)) {
+                    throw new IllegalStateException("Squashed transition did not lead to EquivClassState");
+                }
+                if(!((EquivClassState)t.to).finalized) {
+                    worklist.add((EquivClassState) t.to);
+                }
+            });
+            cl.setFinalized();
+        }
+		r.deterministic = false;
+        return r;
+	}
+
+//    private static void squashTransitions(HashSet<Transition> p, Transition e, Map<Set<State>, EquivClassState> classes) {
+//        State dest = e.to instanceof EquivClassState ? e.to : getContainingClass(e.to, classes);
+//		Set<Transition> p_copy = (Set<Transition>) p.clone();
+//		if(p.size() == 0) {
+//			p.add(new Transition(e.min, e.max, dest));
+//		}
+//		for(Transition t : p_copy) {
+//			State tto = t.to instanceof EquivClassState ? t.to : getContainingClass(t.to, classes);
+//			// Probably requires a flag, yo
+//			if(dest != null && !dest.equals(tto)) {
+//				p.add(new Transition(e.min, e.max, dest));
+//			} else if(e.max > t.max && e.min < t.min) {
+//				p.add(new Transition(e.min, e.max, dest));
+//				p.remove(t);
+//			} else if(e.max < t.max && e.min > t.min) {
+//				continue;
+//			} else if(e.max > t.max && e.min < t.max) {
+//				p.add(new Transition(t.min, e.max, dest));
+//				p.remove(t);
+//			} else if(e.min < t.min && e.max > t.min) {
+//				p.add(new Transition(e.min, t.max, dest));
+//				p.remove(t);
+//			} else {
+//				p.add(new Transition(e.min, e.max, dest));
+//			}
+//		}
+//    }
+
+	private static void squashTransitions(HashSet<Transition> p, Transition e, Map<Set<State>, EquivClassState> classes) {
+		State dest = getContainingClass(e.to, classes);
+
+		Set<Transition> p_copy = (Set<Transition>) p.clone();
+		if(p.size() == 0) {
+			p.add(new Transition(e.min, e.max, dest));
+		}
+		for(Transition t : p_copy) {
+			State tto = getContainingClass(t.to, classes);
+			// Probably requires a flag, yo
+			if(dest != null && dest.equals(tto)) {
+				if (e.max > t.max && e.min < t.min) {
+					p.add(new Transition(e.min, e.max, dest));
+					p.remove(t);
+					return;
+				} else if (e.max < t.max && e.min > t.min) {
+					return;
+				} else if (e.max > t.max && e.min < t.max) {
+					p.add(new Transition(t.min, e.max, dest));
+					p.remove(t);
+					return;
+				} else if (e.min < t.min && e.max > t.min) {
+					p.add(new Transition(e.min, t.max, dest));
+					p.remove(t);
+					return;
+				} else {
+					continue;
+				}
+			}
+		}
+		// if execution reaches this point, either the transition alphabet is disjoint,
+		//  or the transition goes to a new destination
+		p.add(new Transition(e.min, e.max, dest));
+
+	}
+
+    private static void squashTransitions(HashSet<Transition> p, HashSet<Transition> p2, Map<Set<State>, EquivClassState> classes) {
+        for (Transition e : p2) {
+            squashTransitions(p, e, classes);
+        }
+    }
+
+	private static Set<StatePair> traverseCollectingSources(Automaton a1) {
+		HashSet<StatePair> r = new HashSet<>();
+		Set<State> visited = new HashSet<>();
+		LinkedList<State> worklist = new LinkedList<>();
+		worklist.add(a1.initial);
+		while (!worklist.isEmpty()) {
+			State s = worklist.removeFirst();
+			visited.add(s);
+			if (s.sourcePair != null)
+				r.add(s.sourcePair);
+			worklist.addAll(s.getTransitions().stream()
+					.map(t -> t.to)
+					.filter(d -> !visited.contains(d))
+					.collect(Collectors.toList()));
+		}
+		return r;
+	}
+
+    private static EquivClassState getContainingClass(State s, Map<Set<State>,EquivClassState> classes) {
+        for(Set<State> c : classes.keySet()) {
+            if(c.contains(s))
+                return classes.get(c);
+        }
+        return null;
+    }
+
+	static private class EquivClassState extends State{
+		Set<State> containingStates;
+        boolean finalized;
+
+        EquivClassState () {
+            super();
+        }
+
+		EquivClassState (Set<State> containingStates) {
+			super();
+            this.finalized = false;
+			this.containingStates = containingStates;
+            this.accept = containingStates.stream().collect(Collectors.reducing(false, a -> a.accept, (a,b) -> a || b));
+		}
+
+        EquivClassState(Set<State> containingStates, int number) {
+            this(containingStates);
+            this.number = number;
+        }
+
+        EquivClassState (State s) {
+            super();
+            this.finalized = false;
+            this.transitions = s.transitions;
+            this.accept = s.accept;
+            if(s instanceof EquivClassState) {
+                this.containingStates = ((EquivClassState) s).containingStates;
+            } else {
+                this.containingStates = new HashSet<>();
+                this.containingStates.add(s);
+            }
+        }
+
+        boolean addState(State s) {
+            accept |= s.accept;
+            return containingStates.add(s) && transitions.addAll(s.transitions);
+        }
+
+        void setFinalized() {
+            finalized = true;
+        }
+
+        @Override
+        public String toString() {
+            return "EqClass "+ number +" [" + (accept ? "accept" : "reject") +
+                    "]\n\tContains: {\n\t\t" + containingStates.toString().replace("\n", "\n\t\t") +
+                    "\n\t}\n\t Transitions: {\n\t\t" + transitions.toString().replace("\n", "\n\t\t") + "\n\t}\n";
+        }
+    }
 }
