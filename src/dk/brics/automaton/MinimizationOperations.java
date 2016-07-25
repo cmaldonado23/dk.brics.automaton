@@ -29,10 +29,8 @@
 
 package dk.brics.automaton;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.Set;
+import java.lang.reflect.Array;
+import java.util.*;
 
 /**
  * Operations for minimizing automata.
@@ -61,13 +59,6 @@ final public class MinimizationOperations {
 		a.recomputeHashCode();
 	}
 
-	public static void minimizeWid(Automaton a) {
-		if (!a.isSingleton()) {
-			minimizeWidening(a);
-		}
-		a.recomputeHashCode();
-	}
-	
 	private static boolean statesAgree(Transition[][] transitions, boolean[][] mark, int n1, int n2) {
 		Transition[] t1 = transitions[n1];
 		Transition[] t2 = transitions[n2];
@@ -151,12 +142,16 @@ final public class MinimizationOperations {
 	 */
 	public static void minimizeHuffman(Automaton a) {
 		a.determinize();
+
 		a.totalize();
+
 		Set<State> ss = a.getStates();
 		Transition[][] transitions = new Transition[ss.size()][];
 		State[] states = ss.toArray(new State[ss.size()]);
 		boolean[][] mark = new boolean[states.length][states.length];
 		ArrayList<ArrayList<HashSet<IntPair>>> triggers = new ArrayList<ArrayList<HashSet<IntPair>>>();
+
+		// initialize triggers
 		for (int n1 = 0; n1 < states.length; n1++) {
 			ArrayList<HashSet<IntPair>> v = new ArrayList<HashSet<IntPair>>();
 			initialize(v, states.length);
@@ -179,6 +174,7 @@ final public class MinimizationOperations {
 					else
 						markPair(mark, triggers, n1, n2);
 				}
+
 		// assign equivalence class numbers to states
 		int numclasses = 0;
 		for (int n = 0; n < states.length; n++)
@@ -186,22 +182,26 @@ final public class MinimizationOperations {
 		for (int n1 = 0; n1 < states.length; n1++)
 			if (states[n1].number == -1) {
 				states[n1].number = numclasses;
-				for (int n2 = n1 + 1; n2 < states.length; n2++)
-					if (!mark[n1][n2])
+				for (int n2 = n1 + 1; n2 < states.length; n2++){
+					if (!mark[n1][n2]) {
 						states[n2].number = numclasses;
+					}
+				}
 				numclasses++;
 			}
+
 		// make a new state for each equivalence class
 		State[] newstates = new State[numclasses];
 		for (int n = 0; n < numclasses; n++)
 			newstates[n] = new State();
-		// select a class representative for each class and find the new initial
-		// state
+
+		// select a class representative for each class and find the new initial state
 		for (int n = 0; n < states.length; n++) {
 			newstates[states[n].number].number = n;
 			if (states[n] == a.initial)
 				a.initial = newstates[states[n].number];
 		}
+
 		// build transitions and set acceptance
 		for (int n = 0; n < numclasses; n++) {
 			State s = newstates[n];
@@ -209,6 +209,7 @@ final public class MinimizationOperations {
 			for (Transition t : states[s.number].transitions)
 				s.transitions.add(new Transition(t.min, t.max, newstates[t.to.number]));
 		}
+
 		a.removeDeadTransitions();
 	}
 	
@@ -227,13 +228,17 @@ final public class MinimizationOperations {
 	 */
 	public static void minimizeHopcroft(Automaton a) {
 		a.determinize();
+
 		Set<Transition> tr = a.initial.getTransitions();
 		if (tr.size() == 1) {
 			Transition t = tr.iterator().next();
-			if (t.to == a.initial && t.min == Character.MIN_VALUE && t.max == Character.MAX_VALUE)
+			if (t.to == a.initial && t.min == Character.MIN_VALUE && t.max == Character.MAX_VALUE) {
 				return;
+			}
 		}
+
 		a.totalize();
+
 		// make arrays for numbered states and effective alphabet
 		Set<State> ss = a.getStates();
 		State[] states = new State[ss.size()];
@@ -243,6 +248,7 @@ final public class MinimizationOperations {
 			q.number = number++;
 		}
 		char[] sigma = a.getStartPoints();
+
 		// initialize data structures
 		ArrayList<ArrayList<LinkedList<State>>> reverse = new ArrayList<ArrayList<LinkedList<State>>>();
 		for (int q = 0; q < states.length; q++) {
@@ -358,8 +364,9 @@ final public class MinimizationOperations {
 					}
 					k++;
 				}
-				for (State s : splitblock.get(j))
+				for (State s : splitblock.get(j)) {
 					split2[s.number] = false;
+				}
 				refine2[j] = false;
 				splitblock.get(j).clear();
 			}
@@ -378,9 +385,6 @@ final public class MinimizationOperations {
 				s.number = q.number; // select representative
 				q.number = n;
 			}
-			/**
-			 * Here we can make changes for the StatePair
-			 */
 		}
 		// build transitions and set acceptance
 		for (int n = 0; n < newstates.length; n++) {
@@ -392,184 +396,6 @@ final public class MinimizationOperations {
 		a.removeDeadTransitions();
 	}
 
-	//-----------------------------------------------------------------------------------------------------
-	//      Hopscroft for widening!!!!
-	//-----------------------------------------------------------------------------------------------------
-	/**
-	 * Minimizes the given automaton using Hopcroft's algorithm with a modification to make state labels tuples.
-	 */
-	public static void minimizeWidening(Automaton a) {
-		a.determinize();
-		Set<Transition> tr = a.initial.getTransitions();
-		if (tr.size() == 1) {
-			Transition t = tr.iterator().next();
-			if (t.to == a.initial && t.min == Character.MIN_VALUE && t.max == Character.MAX_VALUE)
-				return;
-		}
-		a.totalize();
-		// make arrays for numbered states and effective alphabet
-		Set<State> ss = a.getStates();
-		State[] states = new State[ss.size()];
-		int number = 0;
-		for (State q : ss) {
-			states[number] = q;
-			q.number = number++;
-		}
-		char[] sigma = a.getStartPoints();
-		// initialize data structures
-		ArrayList<ArrayList<LinkedList<State>>> reverse = new ArrayList<ArrayList<LinkedList<State>>>();
-		for (int q = 0; q < states.length; q++) {
-			ArrayList<LinkedList<State>> v = new ArrayList<LinkedList<State>>();
-			initialize(v, sigma.length);
-			reverse.add(v);
-		}
-		boolean[][] reverse_nonempty = new boolean[states.length][sigma.length];
-		ArrayList<LinkedList<State>> partition = new ArrayList<LinkedList<State>>();
-		initialize(partition, states.length);
-		int[] block = new int[states.length];
-		StateList[][] active = new StateList[states.length][sigma.length];
-		StateListNode[][] active2 = new StateListNode[states.length][sigma.length];
-		LinkedList<IntPair> pending = new LinkedList<IntPair>();
-		boolean[][] pending2 = new boolean[sigma.length][states.length];
-		ArrayList<State> split = new ArrayList<State>();
-		boolean[] split2 = new boolean[states.length];
-		ArrayList<Integer> refine = new ArrayList<Integer>();
-		boolean[] refine2 = new boolean[states.length];
-		ArrayList<ArrayList<State>> splitblock = new ArrayList<ArrayList<State>>();
-		initialize(splitblock, states.length);
-		for (int q = 0; q < states.length; q++) {
-			splitblock.set(q, new ArrayList<State>());
-			partition.set(q, new LinkedList<State>());
-			for (int x = 0; x < sigma.length; x++) {
-				reverse.get(q).set(x, new LinkedList<State>());
-				active[q][x] = new StateList();
-			}
-		}
-		// find initial partition and reverse edges
-		for (int q = 0; q < states.length; q++) {
-			State qq = states[q];
-			int j;
-			if (qq.accept)
-				j = 0;
-			else
-				j = 1;
-			partition.get(j).add(qq);
-			block[qq.number] = j;
-			for (int x = 0; x < sigma.length; x++) {
-				char y = sigma[x];
-				State p = qq.step(y);
-				reverse.get(p.number).get(x).add(qq);
-				reverse_nonempty[p.number][x] = true;
-			}
-		}
-		// initialize active sets
-		for (int j = 0; j <= 1; j++)
-			for (int x = 0; x < sigma.length; x++)
-				for (State qq : partition.get(j))
-					if (reverse_nonempty[qq.number][x])
-						active2[qq.number][x] = active[j][x].add(qq);
-		// initialize pending
-		for (int x = 0; x < sigma.length; x++) {
-			int a0 = active[0][x].size;
-			int a1 = active[1][x].size;
-			int j;
-			if (a0 <= a1)
-				j = 0;
-			else
-				j = 1;
-			pending.add(new IntPair(j, x));
-			pending2[x][j] = true;
-		}
-		// process pending until fixed point
-		int k = 2;
-		while (!pending.isEmpty()) {
-			IntPair ip = pending.removeFirst();
-			int p = ip.n1;
-			int x = ip.n2;
-			pending2[x][p] = false;
-			// find states that need to be split off their blocks
-			for (StateListNode m = active[p][x].first; m != null; m = m.next)
-				for (State s : reverse.get(m.q.number).get(x))
-					if (!split2[s.number]) {
-						split2[s.number] = true;
-						split.add(s);
-						int j = block[s.number];
-						splitblock.get(j).add(s);
-						if (!refine2[j]) {
-							refine2[j] = true;
-							refine.add(j);
-						}
-					}
-			// refine blocks
-			for (int j : refine) {
-				System.out.println(partition.get(j));
-				if (splitblock.get(j).size() < partition.get(j).size()) {
-					LinkedList<State> b1 = partition.get(j);
-					LinkedList<State> b2 = partition.get(k);
-					for (State s : splitblock.get(j)) {
-						b1.remove(s);
-						b2.add(s);
-						block[s.number] = k;
-						for (int c = 0; c < sigma.length; c++) {
-							StateListNode sn = active2[s.number][c];
-							if (sn != null && sn.sl == active[j][c]) {
-								sn.remove();
-								active2[s.number][c] = active[k][c].add(s);
-							}
-						}
-					}
-					// update pending
-					for (int c = 0; c < sigma.length; c++) {
-						int aj = active[j][c].size;
-						int ak = active[k][c].size;
-						if (!pending2[c][j] && 0 < aj && aj <= ak) {
-							pending2[c][j] = true;
-							pending.add(new IntPair(j, c));
-						} else {
-							pending2[c][k] = true;
-							pending.add(new IntPair(k, c));
-						}
-					}
-					k++;
-				}
-				for (State s : splitblock.get(j))
-					split2[s.number] = false;
-				refine2[j] = false;
-				splitblock.get(j).clear();
-			}
-			split.clear();
-			refine.clear();
-		}
-		// make a new state for each equivalence class, set initial state
-		State[] newstates = new State[k];
-		for (int n = 0; n < newstates.length; n++) {
-			State s = new State();
-			newstates[n] = s;
-			for (State q : partition.get(n)) {
-				if (q == a.initial)
-					a.initial = s;
-				s.accept = q.accept;
-				s.number = q.number; // select representative
-				s.pair = q.pair;
-				q.number = n;
-			}
-			/**
-			 * Here we can make changes for the StatePair
-			 */
-		}
-		// build transitions and set acceptance
-		for (int n = 0; n < newstates.length; n++) {
-			State s = newstates[n];
-			s.accept = states[s.number].accept;
-			for (Transition t : states[s.number].transitions)
-				s.transitions.add(new Transition(t.min, t.max, newstates[t.to.number]));
-		}
-		a.removeDeadTransitions();
-	}
-	//-----------------------------------------------------------------------------------------------------
-	//		END!
-	//-----------------------------------------------------------------------------------------------------
-	
 	static class IntPair {
 
 		int n1, n2;
