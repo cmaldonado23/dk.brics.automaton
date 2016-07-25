@@ -320,8 +320,13 @@ public class Automaton implements Serializable, Cloneable {
 	 */
 	static void setStateNumbers(Set<State> states) {
 		int number = 0;
-		for (State s : states)
+//		Integer number = new Integer(0);
+
+		for (State s : states) {
 			s.number = number++;
+//			number = number++;
+//			s.number = number.toString();
+		}
 	}
 	
 	/** 
@@ -574,7 +579,13 @@ public class Automaton implements Serializable, Cloneable {
 		} else {
 			Set<State> states = getStates();
 			setStateNumbers(states);
-			b.append("initial state: ").append(initial.number).append("\n");
+
+			if(initial.s_number != null) {
+				b.append("initial state: ").append(initial.s_number).append("\n");
+			} else {
+				b.append("initial state: ").append(initial.number).append("\n");
+//				b.append("initial state: ").append(initial.id).append("\n");
+			}
 			for (State s : states)
 				b.append(s.toString());
 		}
@@ -970,17 +981,6 @@ public class Automaton implements Serializable, Cloneable {
 	 */
 	public static Automaton minimize(Automaton a) {
 		a.minimize();
-		return a;
-	}
-
-	/**
-	 * Returns the automaton being given as argument minimized for widening
-	 */
-	public void minimizeWid() {
-		MinimizationOperations.minimizeWid(this);
-	}
-	public static Automaton minimizeWid(Automaton a) {
-		a.minimizeWid();
 		return a;
 	}
 	
