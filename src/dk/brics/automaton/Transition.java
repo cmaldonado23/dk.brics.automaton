@@ -161,7 +161,12 @@ public class Transition implements Serializable, Cloneable {
 			b.append("-");
 			appendCharString(max, b);
 		}
-		b.append(" -> ").append(to.number);
+		if(to.s_number != null) {
+			b.append(" -> ").append(to.s_number);
+		} else {
+			b.append(" -> ").append(to.number);
+//			b.append(" -> ").append(to.id);
+		}
 		return b.toString();
 	}
 
