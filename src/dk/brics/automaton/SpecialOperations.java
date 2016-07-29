@@ -597,6 +597,10 @@ final public class SpecialOperations {
 		return a.subst(map);
 	}
 
+    //-----------------------------------------------------------------------------------------------------
+    //                               BARTZIS AND BULTAN'S WIDENING OPERATOR                               |
+    //                               BY: KOBY AND CHRISTIAN                                               |
+    //-----------------------------------------------------------------------------------------------------
 	static Marker mark[][];
 
 	public static Set<Set<State>> cond_1(Automaton a, Automaton b) {
@@ -670,10 +674,6 @@ final public class SpecialOperations {
         }
         a1.expandSingleton();
         a2.expandSingleton();
-
-		// debug
-//		System.out.println(a2);
-		//
 
 		Automaton a2_copy = a2;
 
@@ -761,34 +761,6 @@ final public class SpecialOperations {
 		r.deterministic = false;
         return r;
 	}
-
-//    private static void squashTransitions(HashSet<Transition> p, Transition e, Map<Set<State>, EquivClassState> classes) {
-//        State dest = e.to instanceof EquivClassState ? e.to : getContainingClass(e.to, classes);
-//		Set<Transition> p_copy = (Set<Transition>) p.clone();
-//		if(p.size() == 0) {
-//			p.add(new Transition(e.min, e.max, dest));
-//		}
-//		for(Transition t : p_copy) {
-//			State tto = t.to instanceof EquivClassState ? t.to : getContainingClass(t.to, classes);
-//			// Probably requires a flag, yo
-//			if(dest != null && !dest.equals(tto)) {
-//				p.add(new Transition(e.min, e.max, dest));
-//			} else if(e.max > t.max && e.min < t.min) {
-//				p.add(new Transition(e.min, e.max, dest));
-//				p.remove(t);
-//			} else if(e.max < t.max && e.min > t.min) {
-//				continue;
-//			} else if(e.max > t.max && e.min < t.max) {
-//				p.add(new Transition(t.min, e.max, dest));
-//				p.remove(t);
-//			} else if(e.min < t.min && e.max > t.min) {
-//				p.add(new Transition(e.min, t.max, dest));
-//				p.remove(t);
-//			} else {
-//				p.add(new Transition(e.min, e.max, dest));
-//			}
-//		}
-//    }
 
 	private static void squashTransitions(HashSet<Transition> p, Transition e, Map<Set<State>, EquivClassState> classes) {
 		State dest = getContainingClass(e.to, classes);
